@@ -9,7 +9,7 @@ from torch.autograd import Variable
 class AvgrageMeter(object):
 
   def __init__(self):
-    self.reset()
+    self.reset() #初始化的时候重置为0
 
   def reset(self):
     self.avg = 0
@@ -21,7 +21,7 @@ class AvgrageMeter(object):
     self.cnt += n
     self.avg = self.sum / self.cnt
 
-
+#计算top-k精度
 def accuracy(output, target, topk=(1,)):
   maxk = max(topk)
   batch_size = target.size(0)
@@ -36,7 +36,7 @@ def accuracy(output, target, topk=(1,)):
     res.append(correct_k.mul_(100.0/batch_size))
   return res
 
-
+#数据增强的正方形遮掩
 class Cutout(object):
     def __init__(self, length):
         self.length = length
@@ -58,7 +58,7 @@ class Cutout(object):
         img *= mask
         return img
 
-
+#CIFAR10的数据增强操作
 def _data_transforms_cifar10(args):
   CIFAR_MEAN = [0.49139968, 0.48215827, 0.44653124]
   CIFAR_STD = [0.24703233, 0.24348505, 0.26158768]
@@ -78,11 +78,11 @@ def _data_transforms_cifar10(args):
     ])
   return train_transform, valid_transform
 
-
+#计算模型的参数量(M)
 def count_parameters_in_MB(model):
   return np.sum(np.prod(v.size()) for name, v in model.named_parameters() if "auxiliary" not in name)/1e6
 
-
+#保持checkpoint
 def save_checkpoint(state, is_best, save):
   filename = os.path.join(save, 'checkpoint.pth.tar')
   torch.save(state, filename)
@@ -90,15 +90,15 @@ def save_checkpoint(state, is_best, save):
     best_filename = os.path.join(save, 'model_best.pth.tar')
     shutil.copyfile(filename, best_filename)
 
-
+# 保存模型
 def save(model, model_path):
   torch.save(model.state_dict(), model_path)
 
-
+# 载入模型
 def load(model, model_path):
   model.load_state_dict(torch.load(model_path))
 
-
+#随机丢弃路径
 def drop_path(x, drop_prob):
   if drop_prob > 0.:
     keep_prob = 1.-drop_prob
@@ -107,7 +107,7 @@ def drop_path(x, drop_prob):
     x.mul_(mask)
   return x
 
-
+# 创建文件夹，copy文件的一些操作
 def create_exp_dir(path, scripts_to_save=None):
   if not os.path.exists(path):
     os.mkdir(path)
