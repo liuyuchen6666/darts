@@ -15,11 +15,14 @@ class Architect(object):
     self.network_weight_decay = args.weight_decay#设置权重衰减正则化
     self.model = model 
     #设置优化器训练alpha
+    #设置优化器仅优化arch_parameter
     self.optimizer = torch.optim.Adam(self.model.arch_parameters(),
         lr=args.arch_learning_rate, betas=(0.5, 0.999), weight_decay=args.arch_weight_decay)
 
   def _compute_unrolled_model(self, input, target, eta, network_optimizer):
-    loss = self.model._loss(input, target)#计算前向误差
+    # w − ξ*dwLtrain(w, α)
+    #需要先更新一步w，然后根据当前的w取值来优化alpha
+    loss = self.model._loss(input, target)#计算训练集的前向误差
     theta = _concat(self.model.parameters()).data #将权重展开为向量形式
     try:#上一步缓存的动量乘以momentum系数
       moment = _concat(network_optimizer.state[v]['momentum_buffer'] for v in self.model.parameters()).mul_(self.network_momentum)
@@ -31,7 +34,7 @@ class Architect(object):
     #v_{t+1} = moment + dw
     dtheta = _concat(torch.autograd.grad(loss, self.model.parameters())).data + self.network_weight_decay*theta
     #self._construct_model_from_theta ?
-    unrolled_model = self._construct_model_from_theta(theta.sub(eta, moment+dtheta))
+    unrolled_model = self._construct_model_from_theta(theta.sub(eta, moment+dtheta))# w − ξ*dwLtrain(w, α)
     return unrolled_model
 
   def step(self, input_train, target_train, input_valid, target_valid, eta, network_optimizer, unrolled):
@@ -52,14 +55,14 @@ class Architect(object):
     unrolled_loss = unrolled_model._loss(input_valid, target_valid)#L_val(w')
     #更新之后计算误差
     unrolled_loss.backward()#计算更新alpha的值
-    dalpha = [v.grad for v in unrolled_model.arch_parameters()]
+    dalpha = [v.grad for v in unrolled_model.arch_parameters()]# dα Lval(w',α)
     #计算关于alpha的梯度
-    vector = [v.grad.data for v in unrolled_model.parameters()]
+    vector = [v.grad.data for v in unrolled_model.parameters()]# dw'Lval(w',α)
     #计算关于权重系数的梯度
-    implicit_grads = self._hessian_vector_product(vector, input_train, target_train)
+    implicit_grads = self._hessian_vector_product(vector, input_train, target_train)# 计算(dαLtrain(w+,α)-dαLtrain(w-,α))/(2*epsilon) 
     #计算最后的梯度 gradient = dalpha - eta*implicit_grads
     for g, ig in zip(dalpha, implicit_grads):
-      g.data.sub_(eta, ig.data)
+      g.data.sub_(eta, ig.data)  #更新alpha的梯度为g
 
     for v, g in zip(self.model.arch_parameters(), dalpha):
       if v.grad is None:
@@ -71,7 +74,8 @@ class Architect(object):
     #根据权重系数建立新模型
     model_new = self.model.new() #创立新模型
     model_dict = self.model.state_dict()
-
+    
+    # 按照之前的大小，copy  theta参数
     params, offset = {}, 0
     for k, v in self.model.named_parameters():
       v_length = np.prod(v.size())
