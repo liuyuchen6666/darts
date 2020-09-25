@@ -43,9 +43,11 @@ parser.add_argument('--arch_learning_rate', type=float, default=3e-4, help='lear
 parser.add_argument('--arch_weight_decay', type=float, default=1e-3, help='weight decay for arch encoding')
 args = parser.parse_args()
 
+# 每次实验都会创建一个文件夹，把所有py文件给复制过去
 args.save = 'search-{}-{}'.format(args.save, time.strftime("%Y%m%d-%H%M%S"))
 utils.create_exp_dir(args.save, scripts_to_save=glob.glob('*.py'))
 
+# 日志格式设置
 log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
     format=log_format, datefmt='%m/%d %I:%M:%S %p')
@@ -70,13 +72,17 @@ def main():
   torch.cuda.manual_seed(args.seed)
   logging.info('gpu device = %d' % args.gpu)
   logging.info("args = %s", args)
-
-  criterion = nn.CrossEntropyLoss()
+    
+  #交叉熵损失函数
+  criterion = nn.CrossEntropyLoss() 
   criterion = criterion.cuda()
+  
+  #初始化一个模型  Network
   model = Network(args.init_channels, CIFAR_CLASSES, args.layers, criterion)
+  #这个用于更新网络权重参数
   model = model.cuda()
   logging.info("param size = %fMB", utils.count_parameters_in_MB(model))
-
+  
   optimizer = torch.optim.SGD(
       model.parameters(),
       args.learning_rate,
@@ -89,45 +95,54 @@ def main():
   num_train = len(train_data)
   indices = list(range(num_train))
   split = int(np.floor(args.train_portion * num_train))
-
+  
+  #训练集
   train_queue = torch.utils.data.DataLoader(
       train_data, batch_size=args.batch_size,
       sampler=torch.utils.data.sampler.SubsetRandomSampler(indices[:split]),
       pin_memory=True, num_workers=2)
-
+    
+  #验证集
   valid_queue = torch.utils.data.DataLoader(
       train_data, batch_size=args.batch_size,
       sampler=torch.utils.data.sampler.SubsetRandomSampler(indices[split:num_train]),
       pin_memory=True, num_workers=2)
 
+  #学习率调整参数
   scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, float(args.epochs), eta_min=args.learning_rate_min)
-
+  
+  #初始化架构
+  #用于架构参数(alpha)的更新；之前的model是用于权重系数(w)的更新
   architect = Architect(model, args)
 
   for epoch in range(args.epochs):
     scheduler.step()
     lr = scheduler.get_lr()[0]
     logging.info('epoch %d lr %e', epoch, lr)
-
-    genotype = model.genotype()
+    
+    # 对应论文2.4节，会选出来权重值最大的k个前驱节点（CNN部分的话k=2），并把最后的结果存下来
+    # 格式为Genotype(normal=[(op,i),..],normal_concat=[],reduce=[],reduce_concat=[])
+    genotype = model.genotype()  #注意对这个genotype 基因型 选出权重值最大的k个前驱节点
     logging.info('genotype = %s', genotype)
 
     print(F.softmax(model.alphas_normal, dim=-1))
     print(F.softmax(model.alphas_reduce, dim=-1))
 
-    # training
+    # training 进行训练
     train_acc, train_obj = train(train_queue, valid_queue, model, architect, criterion, optimizer, lr)
     logging.info('train_acc %f', train_acc)
 
-    # validation
+    # validation 进行验证
     valid_acc, valid_obj = infer(valid_queue, model, criterion)
     logging.info('valid_acc %f', valid_acc)
-
+    
+    #保存模型
     utils.save(model, os.path.join(args.save, 'weights.pt'))
 
 
 def train(train_queue, valid_queue, model, architect, criterion, optimizer, lr):
+  #分别记录loss\top-1\top-5精度
   objs = utils.AvgrageMeter()
   top1 = utils.AvgrageMeter()
   top5 = utils.AvgrageMeter()
@@ -143,18 +158,24 @@ def train(train_queue, valid_queue, model, architect, criterion, optimizer, lr):
     input_search, target_search = next(iter(valid_queue))
     input_search = Variable(input_search, requires_grad=False).cuda()
     target_search = Variable(target_search, requires_grad=False).cuda(async=True)
-
+    
+    
+    ### 优化部分：DARTS交替优化，第一步优化alpha，第二步再优化w
+    # 更新架构权重alpha，unrolled为True时就是用论文的公式进行alpha的更新
     architect.step(input, target, input_search, target_search, lr, optimizer, unrolled=args.unrolled)
-
+    
+    #前向传播，计算loss
     optimizer.zero_grad()
     logits = model(input)
     loss = criterion(logits, target)
-
+    
+    # 反向传播，梯度裁剪，更新模型权重w
     loss.backward()
     nn.utils.clip_grad_norm(model.parameters(), args.grad_clip)
     optimizer.step()
 
     prec1, prec5 = utils.accuracy(logits, target, topk=(1, 5))
+    #更新误差和topk的精度
     objs.update(loss.data[0], n)
     top1.update(prec1.data[0], n)
     top5.update(prec5.data[0], n)
