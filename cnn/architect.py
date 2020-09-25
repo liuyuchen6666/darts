@@ -68,7 +68,7 @@ class Architect(object):
       if v.grad is None:
         v.grad = Variable(g.data) #将计算得到的梯度值传给模型参数更新
       else:
-        v.grad.data.copy_(g.data)
+        v.grad.data.copy_(g.data)#返回给定的对于alpha求得的梯度值
 
   def _construct_model_from_theta(self, theta):
     #根据权重系数建立新模型
