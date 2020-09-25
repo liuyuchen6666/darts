@@ -25,24 +25,29 @@ class MixedOp(nn.Module):
 class Cell(nn.Module):
 
   def __init__(self, steps, multiplier, C_prev_prev, C_prev, C, reduction, reduction_prev):
-    super(Cell, self).__init__()
-    self.reduction = reduction
-
+    super(Cell, self).__init__() #C_pre_prev表示第k-2个cell的输出通道数
+    self.reduction = reduction #C_prev表示第k-1个cell的输出通道数，C表示当前cell的输出通道数
     if reduction_prev:
       self.preprocess0 = FactorizedReduce(C_prev_prev, C, affine=False)
     else:
       self.preprocess0 = ReLUConvBN(C_prev_prev, C, 1, 1, 0, affine=False)
     self.preprocess1 = ReLUConvBN(C_prev, C, 1, 1, 0, affine=False)
-    self._steps = steps
+    self._steps = steps #一共有4个节点需要优化
     self._multiplier = multiplier
 
     self._ops = nn.ModuleList()
     self._bns = nn.ModuleList()
     for i in range(self._steps):
       for j in range(2+i):
-        stride = 2 if reduction and j < 2 else 1
-        op = MixedOp(C, stride)
-        self._ops.append(op)
+        stride = 2 if reduction and j < 2 else 1  ##size只缩小为两倍，只需要前两个操作的stride为2即可
+        op = MixedOp(C, stride)#先初始化每个节点的8个操作
+        self._ops.append(op)#得到初始化的操作 len=14
+        '''
+        self._ops[0,1]表示内部节点0的前继操作
+        self._ops[2,3,4]表示内部节点1的前继操作
+        self._ops[5,6,7,8]表示内部节点2的前继操作
+        self._ops[9,10,11,12,13]表示内部节点2的前继操作
+        '''
 
   def forward(self, s0, s1, weights):
     s0 = self.preprocess0(s0)
@@ -51,56 +56,69 @@ class Cell(nn.Module):
     states = [s0, s1]
     offset = 0
     for i in range(self._steps):
-      s = sum(self._ops[offset+j](h, weights[offset+j]) for j, h in enumerate(states))
+      s = sum(self._ops[offset+j](h, weights[offset+j]) for j, h in enumerate(states))#对每一个节点，求其前继结点经过操作后与对应操作权重的加权值
       offset += len(states)
       states.append(s)
 
-    return torch.cat(states[-self._multiplier:], dim=1)
+    return torch.cat(states[-self._multiplier:], dim=1)#将他们在channel层拼接在一起，形成cell的输出
 
 
 class Network(nn.Module):
 
   def __init__(self, C, num_classes, layers, criterion, steps=4, multiplier=4, stem_multiplier=3):
+    #c =16 num_class = 10,layers = 8 
     super(Network, self).__init__()
     self._C = C
     self._num_classes = num_classes
     self._layers = layers
     self._criterion = criterion
     self._steps = steps
-    self._multiplier = multiplier
+    self._multiplier = multiplier#4,因为有4个中间节点，所以通道最后扩大四倍
 
-    C_curr = stem_multiplier*C
+    C_curr = stem_multiplier*C #48
     self.stem = nn.Sequential(
       nn.Conv2d(3, C_curr, 3, padding=1, bias=False),
       nn.BatchNorm2d(C_curr)
-    )
- 
+    )#起始的操作 将图像卷积，通道数扩大为48
+    
+    #对于第一个cell，其k-2和k-1个cell都是stem
     C_prev_prev, C_prev, C_curr = C_curr, C_curr, C
     self.cells = nn.ModuleList()
     reduction_prev = False
     for i in range(layers):
-      if i in [layers//3, 2*layers//3]:
+      if i in [layers//3, 2*layers//3]: #返回第2个和第5个为reduction cell
         C_curr *= 2
         reduction = True
       else:
         reduction = False
       cell = Cell(steps, multiplier, C_prev_prev, C_prev, C_curr, reduction, reduction_prev)
-      reduction_prev = reduction
+      reduction_prev = reduction  
+       '''
+    layers = 8, 第2和5个cell是reduction_cell
+    cells[0]: cell = Cell(4, 4, 48,  48,  16, false,  false) 输出[N,16*4,h,w]
+    cells[1]: cell = Cell(4, 4, 48,  64,  16, false,  false) 输出[N,16*4,h,w]
+    cells[2]: cell = Cell(4, 4, 64,  64,  32, True,   false) 输出[N,32*4,h/2,w/2]
+    cells[3]: cell = Cell(4, 4, 64,  128, 32, false,  false) 输出[N,32*4,h/2,w/2]  #当采样cells[1]的结果时，要将feature map大小变为二分之一才能匹配。
+    cells[4]: cell = Cell(4, 4, 128, 128, 32, false,  false) 输出[N,32*4,h/2,w/2]
+    cells[5]: cell = Cell(4, 4, 128, 128, 64, True,   false) 输出[N,64*4,h/4,w/4]
+    cells[6]: cell = Cell(4, 4, 128, 256, 64, false,  false) 输出[N,64*4,h/4,w/4]
+    cells[7]: cell = Cell(4, 4, 256, 256, 64, false,  false) 输出[N,64*4,h/4,w/4]
+    '''
       self.cells += [cell]
       C_prev_prev, C_prev = C_prev, multiplier*C_curr
-
+    
     self.global_pooling = nn.AdaptiveAvgPool2d(1)
     self.classifier = nn.Linear(C_prev, num_classes)
-
+    #定义分类器
     self._initialize_alphas()
 
-  def new(self):
+  def new(self): #拷贝相同的alpha参数
     model_new = Network(self._C, self._num_classes, self._layers, self._criterion).cuda()
     for x, y in zip(model_new.arch_parameters(), self.arch_parameters()):
         x.data.copy_(y.data)
     return model_new
 
-  def forward(self, input):
+  def forward(self, input): #正向传播
     s0 = s1 = self.stem(input)
     for i, cell in enumerate(self.cells):
       if cell.reduction:
@@ -108,9 +126,9 @@ class Network(nn.Module):
       else:
         weights = F.softmax(self.alphas_normal, dim=-1)
       s0, s1 = s1, cell(s0, s1, weights)
-    out = self.global_pooling(s1)
-    logits = self.classifier(out.view(out.size(0),-1))
-    return logits
+    out = self.global_pooling(s1)#全局平均池化
+    logits = self.classifier(out.view(out.size(0),-1))#分类器
+    return logits#输出结果
 
   def _loss(self, input, target):
     logits = self(input)
@@ -133,6 +151,7 @@ class Network(nn.Module):
   def genotype(self):
 
     def _parse(weights):
+      #weights[14,8]
       gene = []
       n = 2
       start = 0
