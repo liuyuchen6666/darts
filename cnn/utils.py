@@ -5,7 +5,7 @@ import shutil
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 
-
+#用于计算均值
 class AvgrageMeter(object):
 
   def __init__(self):
