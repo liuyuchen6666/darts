@@ -109,7 +109,7 @@ class AuxiliaryHeadImageNet(nn.Module):
 
 
 class NetworkCIFAR(nn.Module):
-
+#需要一个auxiliary输入 即需要一个辅助输入
   def __init__(self, C, num_classes, layers, auxiliary, genotype):
     super(NetworkCIFAR, self).__init__()
     self._layers = layers
