@@ -136,9 +136,11 @@ class Network(nn.Module):
 
   def _initialize_alphas(self):
     k = sum(1 for i in range(self._steps) for n in range(2+i))
-    num_ops = len(PRIMITIVES)
+    # k=14
+    num_ops = len(PRIMITIVES) #num_ops=8
 
     self.alphas_normal = Variable(1e-3*torch.randn(k, num_ops).cuda(), requires_grad=True)
+    #(14,8)
     self.alphas_reduce = Variable(1e-3*torch.randn(k, num_ops).cuda(), requires_grad=True)
     self._arch_parameters = [
       self.alphas_normal,
