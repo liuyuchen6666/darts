@@ -84,11 +84,12 @@ def main():
   logging.info("param size = %fMB", utils.count_parameters_in_MB(model))
   
   optimizer = torch.optim.SGD(
-      model.parameters(),
+      model.parameters(), #优化网络权重参数w的优化器
       args.learning_rate,
       momentum=args.momentum,
       weight_decay=args.weight_decay)
-
+  
+  #使用CIFAR-10作为网络结构搜索的数据集
   train_transform, valid_transform = utils._data_transforms_cifar10(args)
   train_data = dset.CIFAR10(root=args.data, train=True, download=True, transform=train_transform)
 
@@ -155,13 +156,14 @@ def train(train_queue, valid_queue, model, architect, criterion, optimizer, lr):
     target = Variable(target, requires_grad=False).cuda(async=True)
 
     # get a random minibatch from the search queue with replacement
-    input_search, target_search = next(iter(valid_queue))
+    input_search, target_search = next(iter(valid_queue))#从验证集里去除样本用于训练alpha
     input_search = Variable(input_search, requires_grad=False).cuda()
     target_search = Variable(target_search, requires_grad=False).cuda(async=True)
     
     
     ### 优化部分：DARTS交替优化，第一步优化alpha，第二步再优化w
     # 更新架构权重alpha，unrolled为True时就是用论文的公式进行alpha的更新
+    #这里的optimizer为网络结构的优化器，architect.step用于更新一次alpha的值
     architect.step(input, target, input_search, target_search, lr, optimizer, unrolled=args.unrolled)
     
     #前向传播，计算loss
@@ -170,6 +172,7 @@ def train(train_queue, valid_queue, model, architect, criterion, optimizer, lr):
     loss = criterion(logits, target)
     
     # 反向传播，梯度裁剪，更新模型权重w
+    #这里又更新了一次权重w（在alpha中也更新了一次w，加一起相当于更新了两次alpha）
     loss.backward()
     nn.utils.clip_grad_norm(model.parameters(), args.grad_clip)
     optimizer.step()
