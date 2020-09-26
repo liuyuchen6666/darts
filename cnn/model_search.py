@@ -40,7 +40,7 @@ class Cell(nn.Module):
     for i in range(self._steps):
       for j in range(2+i):
         stride = 2 if reduction and j < 2 else 1  ##size只缩小为两倍，只需要前两个操作的stride为2即可
-        op = MixedOp(C, stride)#先初始化每个节点的8个操作
+        op = MixedOp(C, stride)#先初始化每个节点的8个操作 每个节点都是8个操作混合起来
         self._ops.append(op)#得到初始化的操作 len=14
         '''
         self._ops[0,1]表示内部节点0的前继操作
@@ -157,15 +157,18 @@ class Network(nn.Module):
       start = 0
       for i in range(self._steps):
         end = start + n
-        W = weights[start:end].copy()
+        W = weights[start:end].copy() #获得当前中间节点关于所有前继节点的权重
+        #实际为2*8的权重矩阵
         edges = sorted(range(i + 2), key=lambda x: -max(W[x][k] for k in range(len(W[x])) if k != PRIMITIVES.index('none')))[:2]
+        #返回具有最大权重边的那个前继节点 按照倒叙排列
+        #定义死了只返回两个最大的edge对应的节点 即返回两个具有最大权重边的节点
         for j in edges:
           k_best = None
           for k in range(len(W[j])):
             if k != PRIMITIVES.index('none'):
               if k_best is None or W[j][k] > W[j][k_best]:
                 k_best = k
-          gene.append((PRIMITIVES[k_best], j))
+          gene.append((PRIMITIVES[k_best], j))#挑出每个节点对应的最大权重的操作
         start = end
         n += 1
       return gene
@@ -173,7 +176,7 @@ class Network(nn.Module):
     gene_normal = _parse(F.softmax(self.alphas_normal, dim=-1).data.cpu().numpy())
     gene_reduce = _parse(F.softmax(self.alphas_reduce, dim=-1).data.cpu().numpy())
 
-    concat = range(2+self._steps-self._multiplier, self._steps+2)
+    concat = range(2+self._steps-self._multiplier, self._steps+2)#concat的节点是事先指定好 [2,3,4,5]
     genotype = Genotype(
       normal=gene_normal, normal_concat=concat,
       reduce=gene_reduce, reduce_concat=concat
