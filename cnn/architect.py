@@ -8,7 +8,7 @@ def _concat(xs):#将向量全部展开为一维
   return torch.cat([x.view(-1) for x in xs])
 
 
-class Architect(object):
+class Architect(object):#用来更新α的值
 #计算alpha的梯度
   def __init__(self, model, args):
     self.network_momentum = args.momentum #设置动量
@@ -16,7 +16,7 @@ class Architect(object):
     self.model = model 
     #设置优化器训练alpha
     #设置优化器仅优化arch_parameter
-    self.optimizer = torch.optim.Adam(self.model.arch_parameters(),
+    self.optimizer = torch.optim.Adam(self.model.arch_parameters(),#模型的结构参数α
         lr=args.arch_learning_rate, betas=(0.5, 0.999), weight_decay=args.arch_weight_decay)
 
   def _compute_unrolled_model(self, input, target, eta, network_optimizer):
@@ -100,7 +100,7 @@ class Architect(object):
     grads_n = torch.autograd.grad(loss, self.model.arch_parameters())
 
     for p, v in zip(self.model.parameters(), vector):
-      p.data.add_(R, v)
+      p.data.add_(R, v)#将原来的参数恢复
     #求得海森矩阵
     return [(x-y).div_(2*R) for x, y in zip(grads_p, grads_n)]
 
