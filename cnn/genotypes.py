@@ -16,16 +16,16 @@ PRIMITIVES = [
 
 NASNet = Genotype(
   normal = [
-    ('sep_conv_5x5', 1),
-    ('sep_conv_3x3', 0),
-    ('sep_conv_5x5', 0),
-    ('sep_conv_3x3', 0),
-    ('avg_pool_3x3', 1),
-    ('skip_connect', 0),
-    ('avg_pool_3x3', 0),
-    ('avg_pool_3x3', 0),
-    ('sep_conv_3x3', 1),
-    ('skip_connect', 1),
+    ('sep_conv_5x5', 1), #表示2号与1号节点有链接 sep_conv_5
+    ('sep_conv_3x3', 0), #2号与0号 
+    ('sep_conv_5x5', 0), #3号与0号
+    ('sep_conv_3x3', 0), #3号与0号
+    ('avg_pool_3x3', 1), #4号与1号
+    ('skip_connect', 0), #4号与0号
+    ('avg_pool_3x3', 0), #5号与0号
+    ('avg_pool_3x3', 0), #5号与0号
+    ('sep_conv_3x3', 1), #6号与1号
+    ('skip_connect', 1), #6号与1号
   ],
   normal_concat = [2, 3, 4, 5, 6],
   reduce = [
