@@ -86,7 +86,7 @@ class AuxiliaryHeadCIFAR(nn.Module):
 class AuxiliaryHeadImageNet(nn.Module):
 
   def __init__(self, C, num_classes):
-    """assuming input size 14x14"""
+    """assuming input size 14x14"""  #实际输入为7
     super(AuxiliaryHeadImageNet, self).__init__()
     self.features = nn.Sequential(
       nn.ReLU(inplace=True),
@@ -109,7 +109,7 @@ class AuxiliaryHeadImageNet(nn.Module):
 
 
 class NetworkCIFAR(nn.Module):
-#需要一个auxiliary输入 即需要一个辅助输入
+#需要一个auxiliary输入 即需要一个辅助输入  true of false
   def __init__(self, C, num_classes, layers, auxiliary, genotype):
     super(NetworkCIFAR, self).__init__()
     self._layers = layers
@@ -169,13 +169,13 @@ class NetworkImageNet(nn.Module):
       nn.ReLU(inplace=True),
       nn.Conv2d(C // 2, C, 3, stride=2, padding=1, bias=False),
       nn.BatchNorm2d(C),
-    )
+    ) #输出的channel数为16，不变//stride=2
 
     self.stem1 = nn.Sequential(
       nn.ReLU(inplace=True),
       nn.Conv2d(C, C, 3, stride=2, padding=1, bias=False),
       nn.BatchNorm2d(C),
-    )
+    ) #输出的channel数为16，不变//stride=2
 
     C_prev_prev, C_prev, C_curr = C, C, C
 
