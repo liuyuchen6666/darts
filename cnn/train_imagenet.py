@@ -56,7 +56,7 @@ logging.getLogger().addHandler(fh)
 CLASSES = 1000
 
 
-class CrossEntropyLabelSmooth(nn.Module):
+class CrossEntropyLabelSmooth(nn.Module): #标签平滑优化
 
   def __init__(self, num_classes, epsilon):
     super(CrossEntropyLabelSmooth, self).__init__()
