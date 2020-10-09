@@ -14,7 +14,7 @@ import torchvision.datasets as dset
 import torch.backends.cudnn as cudnn
 
 from torch.autograd import Variable
-from model import NetworkCIFAR as Network
+from model import NetworkCIFAR as Network  #用于训练CIFAR10的网络
 
 
 parser = argparse.ArgumentParser("cifar")
